@@ -1,88 +1,76 @@
-#include <arpa/inet.h>
-#include <ctype.h>
-#include <errno.h>
-#include <netdb.h>
-#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
+#include <arpa/inet.h>
 
-#define MAX_DATA_LENGTH 80
-#define PORT 8974
-#define SA struct sockaddr
-char *strrev(char *str) {
-  char *p1, *p2;
-
-  if (!str || !*str)
-    return str;
-  for (p1 = str, p2 = str + strlen(str) - 1; p2 > p1; ++p1, --p2) {
-    *p1 ^= *p2;
-    *p2 ^= *p1;
-    *p1 ^= *p2;
-  }
-  return str;
-}
-
-void func(int sockfd) {
-  char buff[MAX_DATA_LENGTH];
-  int i;
-  for (;;) {
-    bzero(buff, MAX_DATA_LENGTH);
-
-    read(sockfd, buff, sizeof(buff));
-    printf("From client: %s", buff);
-
-    // printf("you better work\%s\n",strrev(buff));
-
-    write(sockfd, strrev(buff), sizeof(strrev(buff)));
-
-    if (strncmp("exit", buff, 4) == 0) {
-      printf("Server Exit...\n");
-      break;
+int clientCount = 0;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+struct client {
+  int index;
+  int sockID;
+  struct sockaddr_in clientAddr;
+  int len;
+};
+struct client Client[1024];
+pthread_t thread[1024];
+void * doNetworking(void * ClientDetail) {
+  struct client * clientDetail = (struct client * ) ClientDetail;
+  int index = clientDetail - > index;
+  int clientSocket = clientDetail - > sockID;
+  printf("Client %d connected.\n", index + 1);
+  while (1) {
+    char data[1024];
+    int read = recv(clientSocket, data, 1024, 0);
+    data[read] = '\0';
+    char output[1024];
+    if (strcmp(data, "LIST") == 0) {
+      int l = 0;
+      int i;
+      for (i = 0; i < clientCount; i++) {
+        if (i != index)
+          l += snprintf(output + l, 1024, "Client %d is at socket %d.\n", i + 1, Client[i].sockID);
+      }
+      send(clientSocket, output, 1024, 0);
+      continue;
+    }
+    if (strcmp(data, "SEND") == 0) {
+      read = recv(clientSocket, data, 1024, 0);
+      data[read] = '\0';
+      int id = atoi(data) - 1;
+      read = recv(clientSocket, data, 1024, 0);
+      data[read] = '\0';
+      send(Client[id].sockID, data, 1024, 0);
     }
   }
+  return NULL;
 }
-
 int main() {
-  int sockfd, connfd, len;
-  struct sockaddr_in myserver, cli;
-
-  sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  // sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sockfd == -1) {
-    printf("socket couldnt be created! byee\n");
-    exit(0);
+  int serverSocket = socket(PF_INET, SOCK_STREAM, 0);
+  struct sockaddr_in serverAddr;
+  serverAddr.sin_family = AF_INET;
+  serverAddr.sin_port = htons(8080);
+  serverAddr.sin_addr.s_addr = htons(INADDR_ANY);
+  if (bind(serverSocket, (struct sockaddr * ) & serverAddr, sizeof(serverAddr)) == -1)
+    return 0;
+  if (listen(serverSocket, 1024) == -1)
+    return 0;
+  printf("Server started listenting on port 8080 ...........\n");
+  while (1) {
+    Client[clientCount].sockID = accept(serverSocket, (struct sockaddr * ) &
+      Client[clientCount].clientAddr, & Client[clientCount].len);
+    Client[clientCount].index = clientCount;
+    pthread_create( & thread[clientCount], NULL, doNetworking, (void * ) & Client[clientCount]);
+    clientCount++;
   }
-  bzero(&myserver, sizeof(myserver));
-
-  myserver.sin_family = AF_INET;
-  myserver.sin_addr.s_addr = htonl(INADDR_ANY);
-  myserver.sin_port = htons(PORT);
-
-  if ((bind(sockfd, (SA *)&myserver, sizeof(myserver))) != 0) {
-    printf("socket binding to port failed. check netstat\n");
-    exit(0);
-  }
-
-  if ((listen(sockfd, 5)) != 0) {
-    printf("Listen failed...\n");
-    exit(0);
-  } else
-    printf("Server listening..\n");
-  len = sizeof(cli);
-
-  connfd = accept(sockfd, (SA *)&cli, &len);
-  if (connfd < 0) {
-    printf("server acccept failed...\n");
-    exit(0);
-  } else
-    printf("server acccept the client...\n");
-
-  func(connfd);
-
-  close(sockfd);
+  int i;
+  for (i = 0; i < clientCount; i++)
+    pthread_join(thread[i], NULL);
 }
+
