@@ -48,7 +48,7 @@ NS_LOG_COMPONENT_DEFINE("ThirdScriptExample");
 int main(int argc, char *argv[]) {
   bool verbose = true;
   uint32_t nCsma = 4;
-  uint32_t nWifi = 5;
+  uint32_t nWifi = 4;
   bool tracing = false;
 
   CommandLine cmd;
@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
   p2pNodes41 = NodeContainer(p2pNodes.Get(4), p2pNodes.Get(1));
 
   PointToPointHelper pointToPoint;
-  pointToPoint.SetDeviceAttribute("DataRate", StringValue("5Mbps"));
+  pointToPoint.SetDeviceAttribute("DataRate", StringValue("1.5Mbps"));
   pointToPoint.SetChannelAttribute("Delay", StringValue("2ms"));
 
   NetDeviceContainer p2pDevices01, p2pDevices12, p2pDevices23, p2pDevices34,
@@ -119,11 +119,19 @@ int main(int argc, char *argv[]) {
   apDevices = wifi.Install(phy, mac, wifiApNode);
 
   MobilityHelper mobility;
-  mobility.Install(wifiStaNodes);
 
+  // mobility.SetPositionAllocator(
+  //     "ns3::GridPositionAllocator", "MinX", DoubleValue(0.0), "MinY",
+  //     DoubleValue(0.0), "DeltaX", DoubleValue(5.0), "DeltaY",
+  //     DoubleValue(10.0), "GridWidth", UintegerValue(3), "LayoutType",
+  //     StringValue("RowFirst"));
+
+  // mobility.SetMobilityModel("ns3::RandomWalk2dMobilityModel", "Bounds",
+  //                           RectangleValue(Rectangle(-50, 50, -25, 50)));
+
+  mobility.Install(wifiStaNodes);
   mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
   mobility.Install(wifiApNode);
-
   NodeContainer new1 =
       NodeContainer(p2pNodes.Get(1), p2pNodes.Get(2), p2pNodes.Get(3));
 
@@ -152,7 +160,7 @@ int main(int argc, char *argv[]) {
   address.Assign(staDevices);
   address.Assign(apDevices);
 
-  p2pInterfaces01.SetMetric(0, 100);
+  p2pInterfaces01.SetMetric(1, 100);
   p2pInterfaces01.SetMetric(0, 0);
   p2pInterfaces23.SetMetric(0, 2);
   p2pInterfaces34.SetMetric(0, 8);
@@ -160,13 +168,13 @@ int main(int argc, char *argv[]) {
 
   // Create router nodes, initialize routing database and set up the routing
   // tables in the nodes.
-  Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+  // Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
   UdpEchoServerHelper echoServer(9);
 
   ApplicationContainer serverApps = echoServer.Install(p2pNodes.Get(4));
-  serverApps.Start(Seconds(1.0));
-  serverApps.Stop(Seconds(10.0));
+  serverApps.Start(Seconds(0.0));
+  serverApps.Stop(Seconds(13.0));
 
   UdpEchoClientHelper echoClient(p2pInterfaces41.GetAddress(0), 9);
   echoClient.SetAttribute("MaxPackets", UintegerValue(1000));
@@ -175,46 +183,74 @@ int main(int argc, char *argv[]) {
 
   ApplicationContainer clientApps =
       echoClient.Install(wifiStaNodes.Get(nWifi - 1));
-  clientApps.Start(Seconds(2.0));
-  clientApps.Stop(Seconds(10.0));
+  clientApps.Start(Seconds(1.0));
+  clientApps.Stop(Seconds(13.0));
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables();
+
   RipHelper routingHelper;
 
   Ptr<OutputStreamWrapper> routingStream =
       Create<OutputStreamWrapper>(&std::cout);
 
-  routingHelper.PrintRoutingTableAt(Seconds(9.0), p2pNodes.Get(0),
+  routingHelper.PrintRoutingTableAt(Seconds(7.0), p2pNodes.Get(0),
                                     routingStream);
-  routingHelper.PrintRoutingTableAt(Seconds(9.0), p2pNodes.Get(1),
+  routingHelper.PrintRoutingTableAt(Seconds(7.0), p2pNodes.Get(1),
                                     routingStream);
-  routingHelper.PrintRoutingTableAt(Seconds(9.0), p2pNodes.Get(2),
+  routingHelper.PrintRoutingTableAt(Seconds(7.0), p2pNodes.Get(2),
                                     routingStream);
-  routingHelper.PrintRoutingTableAt(Seconds(9.0), p2pNodes.Get(3),
+  routingHelper.PrintRoutingTableAt(Seconds(7.0), p2pNodes.Get(3),
                                     routingStream);
-  routingHelper.PrintRoutingTableAt(Seconds(9.0), p2pNodes.Get(4),
+  routingHelper.PrintRoutingTableAt(Seconds(7.0), p2pNodes.Get(4),
                                     routingStream);
-  Simulator::Stop(Seconds(10.0));
+
+  routingHelper.PrintRoutingTableAt(Seconds(11.0), p2pNodes.Get(0),
+                                    routingStream);
+  routingHelper.PrintRoutingTableAt(Seconds(11.0), p2pNodes.Get(1),
+                                    routingStream);
+  routingHelper.PrintRoutingTableAt(Seconds(11.0), p2pNodes.Get(2),
+                                    routingStream);
+  routingHelper.PrintRoutingTableAt(Seconds(11.0), p2pNodes.Get(3),
+                                    routingStream);
+  routingHelper.PrintRoutingTableAt(Seconds(11.0), p2pNodes.Get(4),
+                                    routingStream);
+
+  Simulator::Stop(Seconds(13.0));
 
   // if (tracing == true)
   //   {
-  //     pointToPoint.EnablePcapAll ("third");
+  pointToPoint.EnablePcapAll("third");
   //     phy.EnablePcap ("third", apDevices.Get (0));
   //     csma.EnablePcap ("third", csmaDevices.Get (0), true);
   //   }
 
+  // breaking link n2-n3 at t=5s
+  Ptr<Node> n7 = p2pNodes.Get(2);
+  Ptr<Ipv4> n7i = n7->GetObject<Ipv4>();
+  Simulator::Schedule(Seconds(5), &Ipv4::SetDown, n7i, 2);
+
+  Ptr<Node> n8 = p2pNodes.Get(3);
+  Ptr<Ipv4> n8i = n8->GetObject<Ipv4>();
+  Simulator::Schedule(Seconds(5), &Ipv4::SetDown, n8i, 1);
+
+  // breaking link n3-n4 at t=5s
+  Simulator::Schedule(Seconds(7), &Ipv4::SetDown, n8i, 2);
+
+  Ptr<Node> n6 = p2pNodes.Get(4);
+  Ptr<Ipv4> n6i = n6->GetObject<Ipv4>();
+  Simulator::Schedule(Seconds(7), &Ipv4::SetDown, n6i, 1);
+
   AnimationInterface anim("new3.xml");                     // Mandatory
   anim.EnablePacketMetadata(true);                         // Optional
   anim.SetConstantPosition(wifiApNode.Get(0), 0, 0);       // n0
-  anim.SetConstantPosition(wifiStaNodes.Get(1), -50, 50);  // n5
-  anim.SetConstantPosition(wifiStaNodes.Get(2), 50, 50);   // n6
-  anim.SetConstantPosition(wifiStaNodes.Get(3), -50, -50); // n5
-  anim.SetConstantPosition(wifiStaNodes.Get(4), 50, -50);  // n6
-
-  anim.SetConstantPosition(p2pNodes.Get(1), 100, 0);  // n1
-  anim.SetConstantPosition(p2pNodes.Get(2), 150, 0);  // n2
-  anim.SetConstantPosition(p2pNodes.Get(3), 150, 50); // n3
-  anim.SetConstantPosition(p2pNodes.Get(4), 100, 50); // n3
+  anim.SetConstantPosition(wifiStaNodes.Get(0), -50, 50);  // n5
+  anim.SetConstantPosition(wifiStaNodes.Get(1), 50, 50);   // n6
+  anim.SetConstantPosition(wifiStaNodes.Get(2), -50, -50); // n5
+  anim.SetConstantPosition(wifiStaNodes.Get(3), 50, -50);  // n6
+  anim.SetConstantPosition(p2pNodes.Get(1), 100, 0);       // n1
+  anim.SetConstantPosition(p2pNodes.Get(2), 150, 0);       // n2
+  anim.SetConstantPosition(p2pNodes.Get(3), 150, 50);      // n3
+  anim.SetConstantPosition(p2pNodes.Get(4), 100, 50);      // n3
   Simulator::Run();
   Simulator::Destroy();
   return 0;
